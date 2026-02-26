@@ -1,0 +1,7 @@
+product_id,product_name,category,price,quantity,in_stock
+1,Laptop,Electronics,999.99,5,true
+2,Mouse,Electronics,29.99,50,true
+3,Keyboard,Electronics,79.99,30,true
+4,Monitor,Electronics,299.99,10,true
+5,Desk Chair,Furniture,199.99,15,true
+6,Standing Desk,Furniture,499.99,5,false
