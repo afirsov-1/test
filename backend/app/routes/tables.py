@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Header
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.schemas.schemas import (
     CreateTableRequest, TableInfo, ImportResponse, CSVImportRequest,
     ImportHistoryResponse
@@ -11,24 +11,30 @@ from app.utils.db_manager import (
 )
 from app.utils.csv_handler import parse_csv, validate_csv_against_table_schema
 from app.routes.auth import get_current_user
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
 
 router = APIRouter(prefix="/api/tables", tags=["Tables"])
-security = HTTPBearer()
+
+
+def get_user_from_header(authorization: Optional[str] = Header(None)) -> str:
+    """Extract username from Authorization header"""
+    if not authorization:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    
+    try:
+        token = authorization.replace("Bearer ", "")
+        username = get_current_user(token)
+        return username
+    except HTTPException:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
 @router.post("/create", response_model=TableInfo)
 async def create_new_table(
     request: CreateTableRequest,
     db: Session = Depends(get_db),
-    credentials: HTTPAuthCredentials = Depends(security)
+    username: str = Depends(get_user_from_header)
 ):
     """Create a new table in the database"""
-    try:
-        username = get_current_user(credentials.credentials)
-    except HTTPException:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
     try:
         create_table(db, request.table_name, request.columns)
         table_info = get_table_info(db, request.table_name)
@@ -43,14 +49,9 @@ async def create_new_table(
 @router.get("/list", response_model=List[str])
 async def list_tables(
     db: Session = Depends(get_db),
-    credentials: HTTPAuthCredentials = Depends(security)
+    username: str = Depends(get_user_from_header)
 ):
     """Get list of all tables"""
-    try:
-        username = get_current_user(credentials.credentials)
-    except HTTPException:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
     return get_all_tables(db)
 
 
@@ -58,14 +59,9 @@ async def list_tables(
 async def get_table_schema(
     table_name: str,
     db: Session = Depends(get_db),
-    credentials: HTTPAuthCredentials = Depends(security)
+    username: str = Depends(get_user_from_header)
 ):
     """Get table schema information"""
-    try:
-        username = get_current_user(credentials.credentials)
-    except HTTPException:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
     try:
         return get_table_info(db, table_name)
     except ValueError as e:
@@ -78,50 +74,41 @@ async def get_table_schema(
 @router.post("/import-csv", response_model=ImportResponse)
 async def import_csv(
     file: UploadFile = File(...),
-    request: CSVImportRequest = None,
+    table_name: str = None,
     db: Session = Depends(get_db),
-    credentials: HTTPAuthCredentials = Depends(security)
+    username: str = Depends(get_user_from_header)
 ):
     """Import CSV file into table"""
     try:
-        username = get_current_user(credentials.credentials)
-    except HTTPException:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
-    try:
-        # Read file content
         content = await file.read()
         file_content = content.decode('utf-8', errors='ignore')
         
-        # Parse CSV
         headers, rows = parse_csv(file_content)
         
         if not rows:
             raise ValueError("CSV file is empty")
         
-        # Get table schema
-        table_info = get_table_info(db, request.table_name)
+        table_info = get_table_info(db, table_name)
         columns_config = {col.name: col.type for col in table_info.columns}
         
-        # Validate CSV against schema
+        columns_mapping = {header: header for header in headers}
+        
         valid_rows, errors = validate_csv_against_table_schema(
             rows,
             columns_config,
-            request.columns_mapping
+            columns_mapping
         )
         
-        # Insert rows
         inserted_count = 0
         if valid_rows:
-            inserted_count = insert_rows(db, request.table_name, valid_rows)
+            inserted_count = insert_rows(db, table_name, valid_rows)
         
-        # Record in history
         from app.models import User
         user = db.query(User).filter(User.username == username).first()
         
         history = ImportHistory(
             user_id=user.id,
-            table_name=request.table_name,
+            table_name=table_name,
             file_name=file.filename,
             rows_imported=inserted_count,
             status="success" if not errors else "partial",
@@ -153,14 +140,9 @@ async def import_csv(
 @router.get("/history/list", response_model=List[ImportHistoryResponse])
 async def get_import_history(
     db: Session = Depends(get_db),
-    credentials: HTTPAuthCredentials = Depends(security)
+    username: str = Depends(get_user_from_header)
 ):
     """Get import history"""
-    try:
-        username = get_current_user(credentials.credentials)
-    except HTTPException:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
     from app.models import User
     user = db.query(User).filter(User.username == username).first()
     
@@ -169,3 +151,4 @@ async def get_import_history(
     
     history = db.query(ImportHistory).filter(ImportHistory.user_id == user.id).all()
     return history
+
