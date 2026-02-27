@@ -17,7 +17,16 @@ def create_table(db: Session, table_name: str, columns: List[ColumnDefinition]) 
     
     # Build CREATE TABLE statement
     column_defs = []
+    seen_columns = set()
     for col in columns:
+        if not is_valid_column_name(col.name):
+            raise ValueError(f"Invalid column name '{col.name}'")
+        if col.name == "id":
+            raise ValueError("Column name 'id' is reserved")
+        if col.name in seen_columns:
+            raise ValueError(f"Duplicate column name '{col.name}'")
+        seen_columns.add(col.name)
+
         col_type = get_sql_type(col.type, col.max_length)
         col_def = f"{col.name} {col_type}"
         
@@ -115,20 +124,28 @@ def insert_rows(db: Session, table_name: str, rows: List[Dict[str, Any]]) -> int
     
     if not rows:
         return 0
+
+    if not is_valid_table_name(table_name):
+        raise ValueError("Invalid table name")
     
     try:
         # Build INSERT statement
         columns = list(rows[0].keys())
+        if not columns:
+            return 0
+
+        for col in columns:
+            if not is_valid_column_name(col):
+                raise ValueError(f"Invalid column name '{col}'")
+
         col_names = ", ".join(columns)
+        placeholders = ", ".join([f":{col}" for col in columns])
+        sql = text(f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})")
         
         inserted_count = 0
         for row in rows:
-            placeholders = ", ".join([f":%s" % col for col in columns])
-            values = [row.get(col) for col in columns]
-            
-            # Use raw SQL for insert
-            sql = f"INSERT INTO {table_name} ({col_names}) VALUES ({', '.join(['%s'] * len(columns))})"
-            db.execute(text(sql), {f"param_{i}": v for i, v in enumerate(values)})
+            values = {col: row.get(col) for col in columns}
+            db.execute(sql, values)
             inserted_count += 1
         
         db.commit()
@@ -143,6 +160,12 @@ def is_valid_table_name(table_name: str) -> bool:
     import re
     # Allow only alphanumeric and underscore, must start with letter or underscore
     return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table_name))
+
+
+def is_valid_column_name(column_name: str) -> bool:
+    """Validate column name (prevent SQL injection)"""
+    import re
+    return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', column_name))
 
 
 def get_sql_type(python_type: str, max_length: int = None) -> str:

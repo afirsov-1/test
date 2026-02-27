@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Header
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Header, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import csv
 import io
+import json
 from app.schemas.schemas import (
-    CreateTableRequest, TableInfo, ImportResponse, CSVImportRequest,
+    CreateTableRequest, TableInfo, ImportResponse,
     ImportHistoryResponse
 )
 from app.models import get_db, ImportHistory, TableSchema
@@ -78,7 +79,8 @@ async def get_table_schema(
 @router.post("/import-csv", response_model=ImportResponse)
 async def import_csv(
     file: UploadFile = File(...),
-    table_name: str = None,
+    table_name: Optional[str] = Form(None),
+    request: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     username: str = Depends(get_user_from_header)
 ):
@@ -92,10 +94,44 @@ async def import_csv(
         if not rows:
             raise ValueError("CSV file is empty")
         
-        table_info = get_table_info(db, table_name)
+        request_table_name = table_name
+        columns_mapping: Dict[str, str] = {header: header for header in headers}
+
+        if request:
+            try:
+                request_payload: Any = request
+
+                for _ in range(2):
+                    if isinstance(request_payload, str):
+                        normalized_payload = request_payload.replace('\\"', '"')
+                        parsed_payload = json.loads(normalized_payload)
+                        if isinstance(parsed_payload, str):
+                            request_payload = parsed_payload
+                            continue
+                        request_payload = parsed_payload
+                        break
+
+                if not isinstance(request_payload, dict):
+                    raise ValueError("Invalid JSON in request field")
+
+                request_table_name = request_payload.get("table_name", request_table_name)
+                request_mapping = request_payload.get("columns_mapping")
+                if isinstance(request_mapping, dict) and request_mapping:
+                    columns_mapping = request_mapping
+            except json.JSONDecodeError:
+                raise ValueError("Invalid JSON in request field")
+
+        if not request_table_name:
+            raise ValueError("table_name is required")
+
+        table_info = get_table_info(db, request_table_name)
         columns_config = {col.name: col.type for col in table_info.columns}
-        
-        columns_mapping = {header: header for header in headers}
+
+        if not all(csv_col in headers for csv_col in columns_mapping.keys()):
+            raise ValueError("Mapping contains CSV columns that are not present in file")
+
+        if not all(db_col in columns_config for db_col in columns_mapping.values()):
+            raise ValueError("Mapping contains table columns that do not exist")
         
         valid_rows, errors = validate_csv_against_table_schema(
             rows,
@@ -105,14 +141,14 @@ async def import_csv(
         
         inserted_count = 0
         if valid_rows:
-            inserted_count = insert_rows(db, table_name, valid_rows)
+            inserted_count = insert_rows(db, request_table_name, valid_rows)
         
         from app.models import User
         user = db.query(User).filter(User.username == username).first()
         
         history = ImportHistory(
             user_id=user.id,
-            table_name=table_name,
+            table_name=request_table_name,
             file_name=file.filename,
             rows_imported=inserted_count,
             status="success" if not errors else "partial",
