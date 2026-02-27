@@ -157,3 +157,46 @@ def get_sql_type(python_type: str, max_length: int = None) -> str:
         "text": "TEXT"
     }
     return type_mapping.get(python_type, "VARCHAR(255)")
+
+
+def get_row_count(db: Session, table_name: str) -> int:
+    """Get total row count for a table"""
+    if not table_exists(db, table_name):
+        raise ValueError(f"Table '{table_name}' does not exist")
+    
+    try:
+        result = db.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
+        count = result.scalar()
+        return count or 0
+    except Exception as e:
+        raise ValueError(f"Failed to get row count: {str(e)}")
+
+
+def get_table_data(db: Session, table_name: str, limit: int = 100, offset: int = 0) -> tuple[List[Dict[str, Any]], int]:
+    """
+    Get paginated data from table
+    Returns: (rows, total_count)
+    """
+    if not table_exists(db, table_name):
+        raise ValueError(f"Table '{table_name}' does not exist")
+    
+    try:
+        # Get total count
+        total = get_row_count(db, table_name)
+        
+        # Get paginated data
+        result = db.execute(
+            text(f"SELECT * FROM {table_name} ORDER BY id DESC LIMIT :limit OFFSET :offset"),
+            {"limit": limit, "offset": offset}
+        )
+        
+        # Convert rows to dictionaries
+        rows = []
+        for row in result.fetchall():
+            row_dict = dict(row._mapping) if hasattr(row, '_mapping') else dict(zip(result.keys(), row))
+            rows.append(row_dict)
+        
+        return rows, total
+    except Exception as e:
+        raise ValueError(f"Failed to get table data: {str(e)}")
+

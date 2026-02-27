@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000/api';
 
@@ -10,9 +10,9 @@ const api: AxiosInstance = axios.create({
 });
 
 // Add token to requests
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('access_token');
-  if (token) {
+  if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -38,6 +38,15 @@ export const tableService = {
   
   getTableSchema: (tableName: string) =>
     api.get(`/tables/${tableName}`),
+  
+  getTableData: (tableName: string, limit: number = 100, offset: number = 0) =>
+    api.get(`/tables/${tableName}/data`, { params: { limit, offset } }),
+  
+  deleteTable: (tableName: string) =>
+    api.delete(`/tables/${tableName}`),
+  
+  exportTableCsv: (tableName: string) =>
+    api.get(`/tables/${tableName}/export`, { responseType: 'blob' }),
   
   importCSV: (file: File, tableName: string, columnsMapping: Record<string, string>) => {
     const formData = new FormData();

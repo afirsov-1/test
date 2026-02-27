@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Login from './components/Login';
 import CreateTable from './components/CreateTable';
 import CSVImport from './components/CSVImport';
+import ViewTable from './components/ViewTable';
 import { tableService } from './services/api';
 import './styles/app.css';
 import './styles/tables.css';
@@ -65,10 +66,21 @@ function App() {
           <ul>
             <li>
               <button
+                className={`nav-button ${activeTab === 'view' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('view');
+                  fetchTables();
+                }}
+              >
+                📊 Просмотр данных
+              </button>
+            </li>
+            <li>
+              <button
                 className={`nav-button ${activeTab === 'import' ? 'active' : ''}`}
                 onClick={() => setActiveTab('import')}
               >
-                Импорт CSV
+                📥 Импорт CSV
               </button>
             </li>
             <li>
@@ -76,7 +88,7 @@ function App() {
                 className={`nav-button ${activeTab === 'create' ? 'active' : ''}`}
                 onClick={() => setActiveTab('create')}
               >
-                Создать таблицу
+                ➕ Создать таблицу
               </button>
             </li>
             <li>
@@ -87,13 +99,17 @@ function App() {
                   fetchTables();
                 }}
               >
-                Таблицы ({tables.length})
+                📋 Таблицы ({tables.length})
               </button>
             </li>
           </ul>
         </nav>
 
         <main className="app-content">
+          {activeTab === 'view' && (
+            <ViewTable tables={tables} onTablesChange={fetchTables} />
+          )}
+
           {activeTab === 'import' && (
             <CSVImport tables={tables} />
           )}

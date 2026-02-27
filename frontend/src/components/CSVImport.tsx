@@ -127,7 +127,7 @@ const CSVImport: React.FC<CSVImportProps> = ({ tables }) => {
           <select
             id="table-select"
             value={selectedTable}
-            onChange={(e) => setSelectedTable(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedTable(e.target.value)}
             required
           >
             <option value="">-- Выберите таблицу --</option>

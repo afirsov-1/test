@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Header
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import csv
+import io
 from app.schemas.schemas import (
     CreateTableRequest, TableInfo, ImportResponse, CSVImportRequest,
     ImportHistoryResponse
 )
 from app.models import get_db, ImportHistory, TableSchema
 from app.utils.db_manager import (
-    create_table, drop_table, get_table_info, get_all_tables, insert_rows
+    create_table, drop_table, get_table_info, get_all_tables, insert_rows,
+    get_row_count, get_table_data
 )
 from app.utils.csv_handler import parse_csv, validate_csv_against_table_schema
 from app.routes.auth import get_current_user
@@ -152,3 +156,87 @@ async def get_import_history(
     history = db.query(ImportHistory).filter(ImportHistory.user_id == user.id).all()
     return history
 
+
+@router.get("/{table_name}/data")
+async def get_table_data_endpoint(
+    table_name: str,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_user_from_header)
+):
+    """Get table data with pagination"""
+    try:
+        rows, total = get_table_data(db, table_name, limit=limit, offset=offset)
+        return {
+            "data": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.delete("/{table_name}")
+async def delete_table_endpoint(
+    table_name: str,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_user_from_header)
+):
+    """Delete a table"""
+    try:
+        drop_table(db, table_name)
+        return {"message": f"Table '{table_name}' deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/{table_name}/export")
+async def export_table_csv(
+    table_name: str,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_user_from_header)
+):
+    """Export table data to CSV file"""
+    try:
+        # Get table description for column names
+        table_info = get_table_info(db, table_name)
+        
+        # Get all data (without pagination for export)
+        rows, _ = get_table_data(db, table_name, limit=999999, offset=0)
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        
+        if rows:
+            # Get column names from first row + id
+            column_names = ["id"] + [col.name for col in table_info.columns]
+            writer = csv.DictWriter(output, fieldnames=column_names)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        # Convert to bytes
+        csv_bytes = output.getvalue().encode()
+        
+        return StreamingResponse(
+            iter([csv_bytes]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={table_name}.csv"}
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Export failed: {str(e)}"
+        )
