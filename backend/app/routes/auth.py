@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from datetime import timedelta
+from typing import Optional
 from app.schemas.schemas import UserLogin, UserRegister, Token, UserResponse
 from app.models import User, get_db, SessionLocal
 from app.utils.auth import hash_password, verify_password, create_access_token, verify_token
@@ -29,10 +30,12 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
     
     # Create new user
     hashed_password = hash_password(user_data.password)
+    is_first_user = db.query(User).count() == 0
     new_user = User(
         username=user_data.username,
         email=user_data.email,
-        hashed_password=hashed_password
+        hashed_password=hashed_password,
+        role="admin" if is_first_user else "operator"
     )
     
     try:
@@ -89,3 +92,22 @@ async def verify(token: str):
 def get_current_user(token: str = Depends(lambda: "")) -> str:
     """Dependency to get current user from token"""
     return verify_token(token)
+
+
+@router.get("/me", response_model=UserResponse)
+async def me(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Get current authenticated user profile"""
+    if not authorization:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    token = authorization.replace("Bearer ", "")
+    username = verify_token(token)
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return user

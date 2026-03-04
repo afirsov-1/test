@@ -1,14 +1,17 @@
 # Export CSV to DB
 
-Приложение для импорта CSV файлов в базу данных PostgreSQL с веб-интерфейсом и административными возможностями.
+Приложение для импорта CSV файлов в PostgreSQL с веб-интерфейсом, RBAC, аудитом, версионированием и мульти-БД подключениями.
 
 ## Функциональность
 
-✅ **Аутентификация** - Вход по логину и паролю  
-✅ **Загрузка CSV** - Импорт CSV файлов в таблицы БД  
-✅ **Создание таблиц** - Интерфейс для создания таблиц без SQL-запросов  
-✅ **Валидация данных** - Проверка данных при импорте с подробными ошибками  
-✅ **История операций** - Отслеживание всех импортов  
+✅ **Аутентификация и роли** - JWT, роли `admin`/`operator`  
+✅ **RBAC на уровне таблиц** - чтение/запись/изменение/удаление + owner  
+✅ **Мастер CSV импорта** - preview, маппинг, delimiter/encoding, редактируемый preview  
+✅ **Асинхронный импорт** - фоновые job с прогрессом и статусом  
+✅ **Версионирование и откат** - снимки таблиц перед изменениями + rollback  
+✅ **CRUD строк** - inline edit, добавление, удаление выбранных строк  
+✅ **Аудит действий** - журнал операций в админ-панели  
+✅ **Мульти-БД слой** - сохранённые подключения, active connection per user  
 
 ## Технологический стек
 
@@ -59,7 +62,14 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Запустите Backend
+### 4. Примените миграции
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+### 5. Запустите Backend
 
 ```bash
 cd backend
@@ -69,14 +79,14 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 Backend будет доступен на `http://localhost:8000`
 API документация: `http://localhost:8000/docs`
 
-### 5. Установите зависимости Frontend
+### 6. Установите зависимости Frontend
 
 ```bash
 cd frontend
 npm install
 ```
 
-### 6. Запустите Frontend
+### 7. Запустите Frontend
 
 ```bash
 cd frontend
@@ -109,11 +119,22 @@ Frontend будет доступен на `http://localhost:5173`
 ### Импорт CSV
 
 1. Перейдите на вкладку "Импорт CSV"
-2. Выберите таблицу из списка
-3. Загрузите CSV файл
-4. Сопоставьте колонки CSV с колонками таблицы
-5. Нажмите "Импортировать"
-6. Если есть ошибки валидации, они будут показаны с предложением решения
+2. Выберите таблицу и CSV-файл
+3. Настройте delimiter/encoding и получите preview
+4. Выполните сопоставление колонок
+5. При необходимости включите асинхронный импорт с прогрессом
+6. Нажмите "Импортировать"
+
+### Администрирование
+
+- Управление правами по таблицам (grant/revoke/block/unblock)
+- Просмотр audit-логов
+- Управление подключениями БД (create/test/set active/clear active)
+
+### Версии и откат
+
+- Во вкладке "Просмотр данных" доступен список версий таблицы
+- Можно откатиться к выбранному snapshot
 
 ## Структура проекта
 
@@ -148,13 +169,39 @@ Frontend будет доступен на `http://localhost:5173`
 - `POST /api/auth/register` - Регистрация пользователя
 - `POST /api/auth/login` - Вход
 - `POST /api/auth/verify` - Проверка токена
+- `GET /api/auth/me` - Профиль текущего пользователя
 
 ### Таблицы
 - `POST /api/tables/create` - Создать таблицу
 - `GET /api/tables/list` - Список таблиц
 - `GET /api/tables/{table_name}` - Информация о таблице
+- `GET /api/tables/{table_name}/data` - Данные таблицы
+- `POST /api/tables/{table_name}/rows` - Добавить строку
+- `PUT /api/tables/{table_name}/rows/{row_id}` - Обновить строку
+- `DELETE /api/tables/{table_name}/rows` - Удалить строки
 - `POST /api/tables/import-csv` - Импорт CSV
+- `POST /api/tables/import-csv/preview` - Preview CSV
+- `POST /api/tables/import-csv/async` - Асинхронный импорт
+- `GET /api/tables/import-csv/jobs/{job_id}` - Статус async job
 - `GET /api/tables/history/list` - История импортов
+- `GET /api/tables/{table_name}/versions` - Версии таблицы
+- `POST /api/tables/{table_name}/rollback/{version_id}` - Откат версии
+
+### Администрирование
+- `GET /api/admin/users`
+- `GET /api/admin/permissions/{table_name}`
+- `POST /api/admin/permissions/grant`
+- `POST /api/admin/permissions/revoke`
+- `POST /api/admin/permissions/block`
+- `POST /api/admin/permissions/unblock`
+- `GET /api/admin/audit`
+
+### Подключения
+- `GET /api/connections/list`
+- `POST /api/connections/create`
+- `POST /api/connections/test/{connection_id}`
+- `POST /api/connections/set-active/{connection_id}`
+- `POST /api/connections/clear-active`
 
 ## Примеры CSV
 

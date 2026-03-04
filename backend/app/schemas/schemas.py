@@ -28,6 +28,8 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: str
+    role: str
+    active_connection_id: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -88,6 +90,113 @@ class ImportHistoryResponse(BaseModel):
     rows_imported: int
     status: str
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PermissionUpdateRequest(BaseModel):
+    username: str
+    table_name: str
+    can_read: bool = False
+    can_write: bool = False
+    can_alter: bool = False
+    can_delete: bool = False
+    is_owner: bool = False
+
+
+class PermissionBlockRequest(BaseModel):
+    username: str
+    table_name: str
+    blocked_until: Optional[datetime] = None
+
+
+class UserSummaryResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    role: str
+    is_active: int
+
+    class Config:
+        from_attributes = True
+
+
+class TablePermissionResponse(BaseModel):
+    username: str
+    table_name: str
+    can_read: bool
+    can_write: bool
+    can_alter: bool
+    can_delete: bool
+    is_owner: bool
+    blocked_until: Optional[datetime] = None
+
+
+class RowCreateRequest(BaseModel):
+    values: Dict[str, Any]
+
+
+class RowUpdateRequest(BaseModel):
+    values: Dict[str, Any]
+
+
+class RowsDeleteRequest(BaseModel):
+    row_ids: List[int]
+
+
+class TableVersionResponse(BaseModel):
+    id: int
+    user_id: int
+    table_name: str
+    action: str
+    row_count: int = 0
+    message: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RollbackResponse(BaseModel):
+    success: bool
+    table_name: str
+    source_version_id: int
+    restored_rows: int
+    message: str
+
+
+class AuditLogResponse(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    action: str
+    entity_type: str
+    entity_name: Optional[str] = None
+    status: str
+    details: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConnectionCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    db_type: str = Field(default="postgresql")
+    connection_url: str = Field(..., min_length=1)
+    is_shared: bool = False
+
+
+class ConnectionResponse(BaseModel):
+    id: int
+    name: str
+    db_type: str
+    is_shared: bool
+    is_active: bool
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

@@ -1,21 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Login from './components/Login';
 import CreateTable from './components/CreateTable';
 import CSVImport from './components/CSVImport';
 import ViewTable from './components/ViewTable';
-import { tableService } from './services/api';
+import AdminPanel from './components/AdminPanel';
+import { authService, tableService } from './services/api';
 import './styles/app.css';
 import './styles/tables.css';
+import './styles/adminPanel.css';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentRole, setCurrentRole] = useState<string>('operator');
+  const [activeConnectionId, setActiveConnectionId] = useState<number | null>(null);
   const [tables, setTables] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('import');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      hydrateSession();
+    }
+  }, []);
+
+  const hydrateSession = async () => {
+    try {
+      const profile = await authService.me();
+      setCurrentRole(profile.data.role || 'operator');
+      setActiveConnectionId(profile.data.active_connection_id ?? null);
+      setIsAuthenticated(true);
+      fetchTables();
+    } catch (err) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('username');
+      setIsAuthenticated(false);
+      setCurrentRole('operator');
+      setActiveConnectionId(null);
+    }
+  };
+
   const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-    fetchTables();
+    hydrateSession();
   };
 
   const fetchTables = async () => {
@@ -39,6 +65,8 @@ function App() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('username');
     setIsAuthenticated(false);
+    setCurrentRole('operator');
+    setActiveConnectionId(null);
     setTables([]);
     setActiveTab('import');
   };
@@ -54,6 +82,7 @@ function App() {
           <h1>Export CSV to DB</h1>
           <div className="header-actions">
             <span className="username">Пользователь: {localStorage.getItem('username')}</span>
+            <span className="username">Подключение: {activeConnectionId ? `#${activeConnectionId}` : 'primary'}</span>
             <button onClick={handleLogout} className="btn btn-logout">
               Выход
             </button>
@@ -102,6 +131,19 @@ function App() {
                 📋 Таблицы ({tables.length})
               </button>
             </li>
+            {currentRole === 'admin' && (
+              <li>
+                <button
+                  className={`nav-button ${activeTab === 'admin' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab('admin');
+                    fetchTables();
+                  }}
+                >
+                  🛡️ Администрирование
+                </button>
+              </li>
+            )}
           </ul>
         </nav>
 
@@ -142,6 +184,10 @@ function App() {
                 </p>
               )}
             </div>
+          )}
+
+          {activeTab === 'admin' && currentRole === 'admin' && (
+            <AdminPanel tables={tables} onConnectionsChanged={hydrateSession} />
           )}
         </main>
       </div>

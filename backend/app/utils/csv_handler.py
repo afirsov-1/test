@@ -4,17 +4,61 @@ from typing import List, Dict, Any, Tuple
 from app.schemas.schemas import CSVValidationError
 
 
-def parse_csv(file_content: str) -> Tuple[List[str], List[Dict[str, Any]]]:
+def detect_delimiter(file_content: str) -> str:
+    """Detect CSV delimiter from content sample"""
+    sample = file_content[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t"])
+        return dialect.delimiter
+    except Exception:
+        return ","
+
+
+def decode_csv_bytes(file_bytes: bytes, encoding: str = "utf-8") -> str:
+    """Decode CSV bytes with selected encoding and fallbacks"""
+    encodings_to_try = [encoding, "utf-8", "cp1251", "latin-1"]
+    seen = set()
+    for candidate in encodings_to_try:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            return file_bytes.decode(candidate)
+        except Exception:
+            continue
+    raise ValueError("Failed to decode CSV with provided encoding")
+
+
+def parse_csv(file_content: str, delimiter: str = None, max_rows: int = None) -> Tuple[List[str], List[Dict[str, Any]]]:
     """
     Parse CSV file content and return headers and data
     """
     try:
-        reader = csv.DictReader(io.StringIO(file_content))
+        resolved_delimiter = delimiter or detect_delimiter(file_content)
+        reader = csv.DictReader(io.StringIO(file_content), delimiter=resolved_delimiter)
         headers = reader.fieldnames or []
-        rows = list(reader)
+        rows = []
+        for idx, row in enumerate(reader):
+            rows.append(row)
+            if max_rows is not None and idx + 1 >= max_rows:
+                break
         return headers, rows
     except Exception as e:
         raise ValueError(f"Failed to parse CSV: {str(e)}")
+
+
+def preview_csv(file_bytes: bytes, encoding: str = "utf-8", delimiter: str = None, preview_limit: int = 100):
+    """Prepare preview payload for CSV import wizard"""
+    file_content = decode_csv_bytes(file_bytes, encoding=encoding)
+    resolved_delimiter = delimiter or detect_delimiter(file_content)
+    headers, rows = parse_csv(file_content, delimiter=resolved_delimiter, max_rows=preview_limit)
+    return {
+        "headers": headers,
+        "rows": rows,
+        "encoding": encoding,
+        "delimiter": resolved_delimiter,
+        "preview_count": len(rows),
+    }
 
 
 def validate_csv_against_table_schema(
